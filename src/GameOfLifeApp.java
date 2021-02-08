@@ -5,7 +5,7 @@ public class GameOfLifeApp extends PApplet {
     private Cell[][] cells; // papplet has a cells instance variable
 
     public static void main(String[] args) {
-        PApplet.main("GameOfLIfeApp");
+        PApplet.main("GameOfLifeApp");
     }
 
     public GameOfLifeApp() {
