@@ -1,6 +1,5 @@
 /**
- * The CellState enum is a collection of constants grouped together. Every cell can be in 1 of 4 states until
- * it evolves.
+ * Simulation states used while computing the next generation.
  */
 public enum CellState {
     ALIVE,
