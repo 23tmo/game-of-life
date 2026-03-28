@@ -1,151 +1,169 @@
-import processing.core.PApplet;
+import javax.swing.JFrame;
+import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 
-/**
- * GameOfLifeApp is the main class for this program. It has the structure for everything and just calls the other
- * classes for the details. GameOfLifeApp sets up the cell array, runs draw to display, deals with mouse clicks and key
- * presses, and iterates over every non border cell to call evolve and apply rules (from Cell class). It tells the
- * program where to start and also has a getter so other classes can access the GameOfLife app. The historical extension
- * changes the color of the cell by an increment of 50 each time the cell is alive and evolves. The cells timeAlive gets
- * reset when it dies. I also added an additional life-like rule, seeds, which births a new cell when it is surrounded
- * by 2 neighbors and continuously dies.
- */
-public class GameOfLifeApp extends PApplet{
-    private static GameOfLifeApp app;
-    private Cell[][] cells;
-    private boolean evolve;
+public class GameOfLifeApp {
+    private static final int WINDOW_WIDTH = 1000;
+    private static final int WINDOW_HEIGHT = 500;
     private static final int CELL_SIZE = 10;
 
-    /**
-     * main is where every java program starts and tells it where to go from there. This says to start at gamOfLifeApp.
-     * @param args is arguments in an array of type string that we don't use (command line parameters)
-     */
     public static void main(String[] args) {
-        app = new GameOfLifeApp(); // assigning new object into instance variable and runs itself
-        app.runSketch();
+        SwingUtilities.invokeLater(GameOfLifeApp::showWindow);
     }
 
-    /**
-     * GameOfLife constructor, declares evolve false.
-     */
-    public GameOfLifeApp() {
-        evolve = false;
+    private static void showWindow() {
+        Rules rules = new MooreRules(new int[]{3}, new int[]{2, 3});
+        GameOfLifePanel panel = new GameOfLifePanel(WINDOW_WIDTH, WINDOW_HEIGHT, CELL_SIZE, rules);
+
+        JFrame frame = new JFrame("Game of Life");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setResizable(false);
+        frame.setContentPane(panel);
+        frame.pack();
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
+
+        panel.start();
+        SwingUtilities.invokeLater(panel::requestFocusInWindow);
     }
 
+    static class GameOfLifePanel extends JPanel {
+        private static final int FRAME_DELAY_MS = 200;
+        private static final Color DEAD_FILL = Color.BLACK;
+        private static final Color DEAD_STROKE = new Color(0, 102, 204);
+        private static final Color ALIVE_STROKE = Color.BLACK;
 
-    /**
-     * calls super class settings and establishes size of canvas
-     */
-    @Override
-    // PApplet has all these public methods, we need to define the method. Its overriding the settings
-    // method from the PApplet class
-    public void settings() {
-        super.settings();
-        size(1000, 500);
-    }
+        private final Cell[][] cells;
+        private final Timer timer;
+        private boolean evolve;
 
-    /**
-     * calls super class setup, creates 2D array called cells, fills array with new cell objects for every grid
-     * location
-     */
-    @Override
-    public void setup() {
-        super.setup();
-        frameRate(5);
-        Rules rules = new MooreRules(new int[]{3}, new int[]{2, 3}); // Life
-        // Rules rules = new MooreRules(new int[]{2}, new int[]{}); // seeds
-        cells = new Cell[height/CELL_SIZE][width/CELL_SIZE];
-        for(int r = 0; r < cells.length; r++){
-            for(int c = 0; c < cells[r].length; c++) { // if on border of canvas, set cellstate to dead
-                if (r == cells.length - 1 ||
-                        r == 0 ||
-                        c == cells[0].length - 1 ||
-                        c == 0) {
-                    CellState cellState = CellState.DEAD;
-                    Cell newCell = new Cell(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, r, c, cellState, rules, 0);
-                    cells[r][c] = newCell;
+        GameOfLifePanel(int width, int height, int cellSize, Rules rules) {
+            cells = createCells(width, height, cellSize, rules);
+            setPreferredSize(new Dimension(width, height));
+            setBackground(Color.BLACK);
+            setFocusable(true);
+
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent event) {
+                    toggleCellAt(event.getY() / cellSize, event.getX() / cellSize);
+                    requestFocusInWindow();
+                    repaint();
                 }
-                else {
-                    CellState cellState = CellState.DEAD;
-                    Cell newCell = new Cell(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, r, c, cellState, rules, 0);
-                    cells[r][c] = newCell;
+            });
+
+            addKeyListener(new KeyAdapter() {
+                @Override
+                public void keyPressed(KeyEvent event) {
+                    evolve = !evolve;
+                    repaint();
                 }
+            });
+
+            timer = new Timer(FRAME_DELAY_MS, event -> {
+                if (evolve) {
+                    step();
+                }
+                repaint();
+            });
+        }
+
+        public void start() {
+            timer.start();
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g2 = (Graphics2D) graphics.create();
+            try {
+                for (int row = 1; row < cells.length - 1; row++) {
+                    for (int column = 1; column < cells[row].length - 1; column++) {
+                        drawCell(g2, cells[row][column]);
+                    }
+                }
+            } finally {
+                g2.dispose();
             }
         }
-    }
 
-    /**
-     * continuously running, Draw displays the cell objects and when boolean evolve is true, calls evolve and apply rules
-     */
-    @Override
-    public void draw() {
-        if (evolve){
+        private void toggleCellAt(int row, int column) {
+            if (!isInteriorCell(row, column)) {
+                return;
+            }
+            cells[row][column].handleClick();
+        }
+
+        private void step() {
             applyRules();
             evolve();
         }
-        display(); // displays cell objects
-    }
 
-    /**
-     * calls super class method, establishes what row and column the cell clicked was, calls handleMouseClicked for
-     * the cell in clicked row and column
-     */
-    @Override
-    public void mouseClicked() { // figures out where you clicked and sends to handleClick
-        super.mouseClicked(); // calling PApplet version of the same methods
-        int col = mouseX/CELL_SIZE; // mouseX 450/10 = 45
-        int row = mouseY/CELL_SIZE; // mouseY 115, 115/10 = 11
-        cells[row][col].handleClick(); // having Cell objects handle clicks
-    }
-
-    /**
-     * calls super class method, changes the state of boolean evolve to turn on or off cell evolution
-     */
-    @Override
-    public void keyPressed() {
-        super.keyPressed();
-        evolve = !evolve; // pausing and restarting Cell evolution
-    }
-
-    /**
-     * iterates over all objects in 2D array and calls Cell's apply rules for them each
-     */
-    private void applyRules(){
-        for(int r = 1; r < cells.length - 1 ; r++){
-            for(int c = 1; c < cells[0].length - 1; c++){
-                cells[r][c].applyRules(cells); // goes over each cell and apply rules to each cell in nested for loop
+        private void applyRules() {
+            for (int row = 1; row < cells.length - 1; row++) {
+                for (int column = 1; column < cells[row].length - 1; column++) {
+                    cells[row][column].applyRules(cells);
+                }
             }
         }
-    }
 
-    /**
-     * iterates over all objects in 2D array and calls Cell's evolve for them each
-     */
-    private void evolve(){
-        for(int i = 1; i < cells.length -1 ; i++){
-            for(int j = 1; j < cells[0].length - 1; j++) {
-                cells[i][j].evolve(); // iterates over each cell and tells it to evolve
+        private void evolve() {
+            for (int row = 1; row < cells.length - 1; row++) {
+                for (int column = 1; column < cells[row].length - 1; column++) {
+                    cells[row][column].evolve();
+                }
             }
         }
-    }
 
-    /**
-     *  iterates over all objects in 2D array and calls Cell's display method for them each
-     */
-    private void display(){
-        for(int i = 1; i < cells.length - 1; i++){
-            for(int j = 1; j < cells[0].length -1; j++) {
-                cells[i][j].display(); // iterates over 2D array and calls display on each cell object
+        private void drawCell(Graphics2D graphics, Cell cell) {
+            if (cell.getCellState() == CellState.ALIVE) {
+                graphics.setColor(new Color(clampColor(cell.getTimeAlive()), 0, 255));
+                graphics.fillRect(cell.getX(), cell.getY(), cell.getSize(), cell.getSize());
+                graphics.setColor(ALIVE_STROKE);
+                graphics.drawRect(cell.getX(), cell.getY(), cell.getSize(), cell.getSize());
+                return;
             }
-        }
-    }
 
-    /**
-     * getter for gameOfLifeApp, the whole class, other methods (cell) call this when they need to draw itself,
-     * it needs to call rect and needs an instance of the PApplet, this is the method that helps it instead of
-     * calling "this" can call this method - GameOfLifeApp.getApp();
-     * @return app, an object of PApplet established to be reference to itself
-     */
-    public static GameOfLifeApp getApp(){
-        return app;
+            graphics.setColor(DEAD_FILL);
+            graphics.fillRect(cell.getX(), cell.getY(), cell.getSize(), cell.getSize());
+            graphics.setColor(DEAD_STROKE);
+            graphics.drawRect(cell.getX(), cell.getY(), cell.getSize(), cell.getSize());
+        }
+
+        private boolean isInteriorCell(int row, int column) {
+            return row > 0 && row < cells.length - 1 && column > 0 && column < cells[row].length - 1;
+        }
+
+        private static Cell[][] createCells(int width, int height, int cellSize, Rules rules) {
+            Cell[][] grid = new Cell[height / cellSize][width / cellSize];
+            for (int row = 0; row < grid.length; row++) {
+                for (int column = 0; column < grid[row].length; column++) {
+                    grid[row][column] = new Cell(
+                            column * cellSize,
+                            row * cellSize,
+                            cellSize,
+                            row,
+                            column,
+                            CellState.DEAD,
+                            rules,
+                            0
+                    );
+                }
+            }
+            return grid;
+        }
+
+        private static int clampColor(int value) {
+            return Math.max(0, Math.min(255, value));
+        }
     }
 }
